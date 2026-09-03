@@ -5,7 +5,6 @@ from typing import Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
-
 from openai import OpenAI
 
 
@@ -36,16 +35,13 @@ class ScreenshotAnalysisTool(BaseTool):
 
     args_schema: Type[BaseModel] = ScreenshotAnalysisInput
 
-    def _run(
-        self,
-        image_path: str
-    ) -> dict:
+    def _run(self, image_path: str) -> dict:
 
         try:
 
-            # ------------------------------------------------
+            # ==================================================
             # API KEY
-            # ------------------------------------------------
+            # ==================================================
 
             api_key = (
                 os.getenv("OPENROUTER_API_KEY")
@@ -58,14 +54,14 @@ class ScreenshotAnalysisTool(BaseTool):
                     "success": False,
                     "text": "",
                     "error": (
-                        "OPENROUTER_API_KEY or OPENAI_API_KEY "
-                        "was not found."
+                        "API key not found. "
+                        "Set OPENROUTER_API_KEY in your .env file."
                     )
                 }
 
-            # ------------------------------------------------
-            # CHECK FILE
-            # ------------------------------------------------
+            # ==================================================
+            # CHECK IMAGE
+            # ==================================================
 
             path = Path(image_path)
 
@@ -74,24 +70,38 @@ class ScreenshotAnalysisTool(BaseTool):
                 return {
                     "success": False,
                     "text": "",
-                    "error": (
-                        f"Image file not found: {image_path}"
-                    )
+                    "error": f"Image file not found: {image_path}"
                 }
 
-            # ------------------------------------------------
+            if not path.is_file():
+
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": f"Image path is not a file: {image_path}"
+                }
+
+            # ==================================================
             # READ IMAGE
-            # ------------------------------------------------
+            # ==================================================
 
             image_bytes = path.read_bytes()
+
+            if not image_bytes:
+
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": "The uploaded image is empty."
+                }
 
             encoded_image = base64.b64encode(
                 image_bytes
             ).decode("utf-8")
 
-            # ------------------------------------------------
+            # ==================================================
             # MIME TYPE
-            # ------------------------------------------------
+            # ==================================================
 
             extension = path.suffix.lower()
 
@@ -102,22 +112,26 @@ class ScreenshotAnalysisTool(BaseTool):
                 ".webp": "image/webp",
             }
 
-            mime_type = mime_types.get(
-                extension,
-                "image/png"
-            )
+            mime_type = mime_types.get(extension)
 
-            # ------------------------------------------------
-            # OPENROUTER CLIENT
-            # ------------------------------------------------
+            if not mime_type:
 
-            client = OpenAI(
-                api_key=api_key,
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": (
+                        f"Unsupported image format: {extension}. "
+                        "Use PNG, JPG, JPEG or WEBP."
+                    )
+                }
 
-                base_url=os.getenv(
-                    "OPENAI_BASE_URL",
-                    "https://openrouter.ai/api/v1"
-                )
+            # ==================================================
+            # OPENROUTER
+            # ==================================================
+
+            base_url = os.getenv(
+                "OPENAI_BASE_URL",
+                "https://openrouter.ai/api/v1"
             )
 
             vision_model = os.getenv(
@@ -125,32 +139,57 @@ class ScreenshotAnalysisTool(BaseTool):
                 "google/gemini-2.5-flash"
             )
 
-            # ------------------------------------------------
+            print("--------------------------------------------")
+            print("SCREENSHOT ANALYSIS")
+            print(f"Image: {path}")
+            print(f"Model: {vision_model}")
+            print(f"Base URL: {base_url}")
+            print("--------------------------------------------")
+
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+            )
+
+            # ==================================================
             # PROMPT
-            # ------------------------------------------------
+            # ==================================================
 
             prompt = """
-You are an OCR-style cybersecurity evidence extraction tool.
+You are an OCR-style text extraction system.
 
-Read the screenshot carefully and extract ONLY the visible
-message/text shown in the screenshot.
+Read the uploaded screenshot carefully.
 
-Rules:
+Extract ONLY the text that is visibly present in the image.
 
-1. Preserve the wording as accurately as possible.
-2. Preserve URLs if visible.
-3. Preserve important numbers, OTPs, amounts and dates if visible.
-4. Do NOT classify the message.
-5. Do NOT say SAFE, SUSPICIOUS or DANGEROUS.
-6. Do NOT add cybersecurity advice.
-7. Do NOT describe the visual appearance.
-8. Do NOT add information that is not visible.
-9. Return only the extracted visible text.
+Requirements:
+
+- Preserve the original wording as accurately as possible.
+- Preserve URLs.
+- Preserve email addresses.
+- Preserve phone numbers.
+- Preserve OTPs and verification codes.
+- Preserve dates.
+- Preserve monetary amounts.
+- Preserve important punctuation.
+- Keep the extracted text in readable order.
+
+Do NOT:
+- classify the message
+- call it safe
+- call it suspicious
+- call it dangerous
+- provide cybersecurity advice
+- explain the screenshot
+- describe colors or UI
+- invent missing text
+
+Return ONLY the visible text.
 """
 
-            # ------------------------------------------------
+            # ==================================================
             # VISION REQUEST
-            # ------------------------------------------------
+            # ==================================================
 
             response = client.chat.completions.create(
 
@@ -161,10 +200,12 @@ Rules:
                         "role": "user",
 
                         "content": [
+
                             {
                                 "type": "text",
-                                "text": prompt
+                                "text": prompt,
                             },
+
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -172,65 +213,96 @@ Rules:
                                         f"data:{mime_type};"
                                         f"base64,{encoded_image}"
                                     )
-                                }
-                            }
-                        ]
+                                },
+                            },
+                        ],
                     }
                 ],
 
                 max_tokens=1000,
 
-                temperature=0
+                temperature=0,
             )
 
-            # ------------------------------------------------
-            # EXTRACT RESPONSE
-            # ------------------------------------------------
+            # ==================================================
+            # RESPONSE CHECK
+            # ==================================================
 
-            text = ""
+            if not response.choices:
 
-            if response.choices:
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": (
+                        "OpenRouter returned no choices."
+                    )
+                }
 
-                text = (
-                    response
-                    .choices[0]
-                    .message
-                    .content
-                    or ""
-                )
+            message = response.choices[0].message
+
+            text = message.content or ""
 
             text = str(text).strip()
 
-            # Remove accidental markdown fences
+            # ==================================================
+            # EMPTY RESPONSE
+            # ==================================================
+
+            if not text:
+
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": (
+                        "Vision model returned an empty response."
+                    )
+                }
+
+            # ==================================================
+            # REMOVE MARKDOWN FENCES
+            # ==================================================
 
             if text.startswith("```"):
 
                 lines = text.splitlines()
 
                 if len(lines) >= 2:
-
                     lines = lines[1:]
 
                 if lines and lines[-1].strip() == "```":
-
                     lines = lines[:-1]
 
                 text = "\n".join(lines).strip()
 
+            # ==================================================
+            # SUCCESS
+            # ==================================================
+
+            print("Extracted screenshot text:")
+            print(text)
+            print("--------------------------------------------")
+
             return {
                 "success": True,
                 "text": text,
-                "error": ""
+                "error": "",
             }
+
+        # ======================================================
+        # ERROR
+        # ======================================================
 
         except Exception as e:
 
-            print(
-                f"Screenshot analysis error: {e}"
-            )
+            error_message = str(e)
+
+            print("--------------------------------------------")
+            print("SCREENSHOT ANALYSIS ERROR")
+            print(error_message)
+            print("--------------------------------------------")
 
             return {
                 "success": False,
                 "text": "",
-                "error": str(e)
+                "error": error_message,
             }
