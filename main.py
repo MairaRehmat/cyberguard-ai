@@ -1,4 +1,4 @@
-from phish_guard_ai.crew import check_message
+from crew import check_message
 
 
 def run_message_investigation(message):
