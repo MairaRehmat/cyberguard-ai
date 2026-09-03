@@ -1,7 +1,7 @@
 crewai==0.86.0
 streamlit
 plotly
-pydantic<2.12
+pydantic==2.11.10
 Pillow
 pytesseract
 python-dotenv
