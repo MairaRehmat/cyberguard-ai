@@ -5,15 +5,16 @@ from datetime import datetime, timezone
 from typing import List
 
 from crewai import Agent, Crew, LLM, Process, Task
-
 from screenshot_tool import ScreenshotAnalysisTool
+
 
 # ============================================================
 # ENVIRONMENT
 # ============================================================
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv(
-    "OPENAI_API_KEY"
+OPENROUTER_API_KEY = (
+    os.getenv("OPENROUTER_API_KEY")
+    or os.getenv("OPENAI_API_KEY")
 )
 
 OPENROUTER_BASE_URL = os.getenv(
@@ -34,7 +35,6 @@ MODEL_NAME = os.getenv(
 cyberguard_llm = None
 
 if OPENROUTER_API_KEY:
-
     try:
         cyberguard_llm = LLM(
             model=MODEL_NAME,
@@ -55,14 +55,12 @@ if OPENROUTER_API_KEY:
 
 screenshot_tool = None
 
-if ScreenshotAnalysisTool is not None:
+try:
+    screenshot_tool = ScreenshotAnalysisTool()
 
-    try:
-        screenshot_tool = ScreenshotAnalysisTool()
-
-    except Exception as e:
-        print(f"Screenshot tool initialization warning: {e}")
-        screenshot_tool = None
+except Exception as e:
+    print(f"Screenshot tool initialization warning: {e}")
+    screenshot_tool = None
 
 
 # ============================================================
@@ -73,15 +71,18 @@ if cyberguard_llm:
 
     security_analyst = Agent(
         role="Cybersecurity Assistant",
+
         goal=(
             "Answer cybersecurity questions accurately, safely, "
             "clearly and in simple language."
         ),
+
         backstory=(
             "You are a cybersecurity assistant that helps users "
             "understand phishing, scams, suspicious messages, "
             "password safety, malware and online security."
         ),
+
         llm=cyberguard_llm,
         verbose=False,
         allow_delegation=False,
@@ -89,13 +90,16 @@ if cyberguard_llm:
 
     report_writer = Agent(
         role="Cybersecurity Report Writer",
+
         goal=(
             "Provide concise and useful cybersecurity guidance."
         ),
+
         backstory=(
             "You explain cybersecurity concepts in a simple "
             "and user-friendly way."
         ),
+
         llm=cyberguard_llm,
         verbose=False,
         allow_delegation=False,
@@ -153,7 +157,7 @@ def calculate_risk(message: str):
     safe_actions: List[str] = []
 
     # --------------------------------------------------------
-    # Empty / normal message
+    # EMPTY / NORMAL MESSAGE
     # --------------------------------------------------------
 
     if not text:
@@ -162,10 +166,12 @@ def calculate_risk(message: str):
             "risk_score": 0,
             "verdict": "SAFE",
             "threats": [],
+            "threat_assessment": [],
             "reasons": [
                 "No suspicious message content was detected."
             ],
             "warnings": [],
+            "warning_signs": [],
             "safe_actions": [
                 "Continue following normal cybersecurity practices."
             ],
@@ -191,7 +197,7 @@ def calculate_risk(message: str):
             "Credential request detected."
         ),
 
-        # OTP / verification code
+        # OTP
         (
             r"\b(otp|one[- ]time password|verification code|security code)\b",
             30,
@@ -376,6 +382,7 @@ def calculate_risk(message: str):
     # --------------------------------------------------------
 
     login_patterns = [
+
         r"\bunusual activity\b",
         r"\bsuspicious activity\b",
         r"\bnew login\b",
@@ -528,7 +535,7 @@ def calculate_risk(message: str):
             )
 
     # --------------------------------------------------------
-    # NORMALIZATION OF SCORE
+    # NORMALIZE SCORE
     # --------------------------------------------------------
 
     score = max(0, min(100, score))
@@ -550,7 +557,7 @@ def calculate_risk(message: str):
         verdict = "SAFE"
 
     # --------------------------------------------------------
-    # SAFE MESSAGE
+    # SAFE
     # --------------------------------------------------------
 
     if verdict == "SAFE":
@@ -577,7 +584,7 @@ def calculate_risk(message: str):
         )
 
     # --------------------------------------------------------
-    # SUSPICIOUS MESSAGE
+    # SUSPICIOUS
     # --------------------------------------------------------
 
     elif verdict == "SUSPICIOUS":
@@ -589,9 +596,12 @@ def calculate_risk(message: str):
             )
 
         safe_actions = [
+
             "Do not share passwords or verification codes.",
+
             "Verify the message through the official app or website.",
-            "Avoid clicking unexpected links."
+
+            "Avoid clicking unexpected links.",
         ]
 
         recommendation = (
@@ -604,17 +614,22 @@ def calculate_risk(message: str):
         )
 
     # --------------------------------------------------------
-    # DANGEROUS MESSAGE
+    # DANGEROUS
     # --------------------------------------------------------
 
     else:
 
         safe_actions = [
+
             "Do not click the link.",
+
             "Do not provide passwords, OTPs or verification codes.",
+
             "Do not send financial information.",
+
             "Report or delete the message.",
-            "If you already interacted with it, secure the affected account."
+
+            "If you already interacted with it, secure the affected account.",
         ]
 
         recommendation = (
@@ -627,7 +642,9 @@ def calculate_risk(message: str):
             "and requests for sensitive information."
         )
 
-    # Remove duplicate items while preserving order
+    # --------------------------------------------------------
+    # REMOVE DUPLICATES
+    # --------------------------------------------------------
 
     threats = list(dict.fromkeys(threats))
     reasons = list(dict.fromkeys(reasons))
@@ -635,15 +652,25 @@ def calculate_risk(message: str):
     safe_actions = list(dict.fromkeys(safe_actions))
 
     return {
+
         "risk_score": score,
+
         "verdict": verdict,
+
         "threats": threats,
+
         "threat_assessment": threats,
+
         "reasons": reasons,
+
         "warnings": warnings,
+
         "warning_signs": warnings,
+
         "safe_actions": safe_actions,
+
         "recommendation": recommendation,
+
         "education": education,
     }
 
@@ -680,6 +707,10 @@ def extract_screenshot_text(image_path: str):
 
     except Exception as e:
 
+        print(
+            f"Screenshot analysis error: {e}"
+        )
+
         return {
             "success": False,
             "text": "",
@@ -705,19 +736,42 @@ def check_message(message="", image_path=None):
             image_path
         )
 
+        # IMPORTANT:
+        # Do NOT silently convert screenshot failure into
+        # SUSPICIOUS + 0%.
+        #
+        # We return the real error so it can be diagnosed.
+
         if not extraction.get("success", False):
+
+            error_message = extraction.get(
+                "error",
+                "Unknown screenshot analysis error."
+            )
 
             result = calculate_risk("")
 
             result["risk_score"] = 0
+
             result["verdict"] = "SUSPICIOUS"
 
             result["reasons"] = [
-                "The screenshot could not be analyzed."
+
+                "The screenshot could not be analyzed.",
+
+                f"Analysis error: {error_message}",
             ]
 
+            result["warnings"] = [
+
+                "Please check the screenshot analysis configuration."
+            ]
+
+            result["warning_signs"] = result["warnings"]
+
             result["recommendation"] = (
-                "Please try uploading the screenshot again."
+                "Screenshot analysis failed. Please check the "
+                "error message and your vision model/API configuration."
             )
 
             result["extracted_text"] = ""
@@ -729,9 +783,40 @@ def check_message(message="", image_path=None):
             ""
         )
 
-        # IMPORTANT:
-        # Screenshot text goes through the EXACT SAME
-        # deterministic classifier as typed messages.
+        # ----------------------------------------------------
+        # EMPTY OCR RESULT
+        # ----------------------------------------------------
+
+        if not extracted_text.strip():
+
+            result = calculate_risk("")
+
+            result["risk_score"] = 0
+
+            result["verdict"] = "SUSPICIOUS"
+
+            result["reasons"] = [
+                "The screenshot was processed, but no readable text was extracted."
+            ]
+
+            result["warnings"] = [
+                "Try uploading a clearer screenshot with readable text."
+            ]
+
+            result["warning_signs"] = result["warnings"]
+
+            result["recommendation"] = (
+                "No readable text was found in the screenshot, "
+                "so a reliable security assessment could not be performed."
+            )
+
+            result["extracted_text"] = ""
+
+            return result
+
+        # ----------------------------------------------------
+        # SAME CLASSIFIER FOR SCREENSHOT TEXT
+        # ----------------------------------------------------
 
         result = calculate_risk(
             extracted_text
@@ -808,6 +893,7 @@ def save_security_activity(result):
                     data = json.load(f)
 
                 if not isinstance(data, list):
+
                     data = []
 
             except Exception:
@@ -815,6 +901,7 @@ def save_security_activity(result):
                 data = []
 
         entry = {
+
             "timestamp": datetime.now(
                 timezone.utc
             ).isoformat(),
@@ -852,7 +939,9 @@ def ask_cyberguard(question):
 
     if not question or not question.strip():
 
-        return "Please enter a cybersecurity question."
+        return (
+            "Please enter a cybersecurity question."
+        )
 
     if not cyberguard_llm:
 
@@ -864,10 +953,13 @@ def ask_cyberguard(question):
     try:
 
         task = Task(
+
             description=(
                 "Answer the following cybersecurity question clearly "
                 "and accurately.\n\n"
+
                 f"Question: {question}\n\n"
+
                 "Keep the answer concise and practical. "
                 "Do not invent facts."
             ),
@@ -880,9 +972,13 @@ def ask_cyberguard(question):
         )
 
         crew = Crew(
+
             agents=[security_analyst],
+
             tasks=[task],
+
             process=Process.sequential,
+
             verbose=False,
         )
 
