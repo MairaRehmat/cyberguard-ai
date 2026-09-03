@@ -7,10 +7,9 @@ from typing import List
 from crewai import Agent, Crew, LLM, Process, Task
 
 try:
-    from .tools.screenshot_tool import ScreenshotAnalysisTool
+    from screenshot_tool import ScreenshotAnalysisTool
 except Exception:
     ScreenshotAnalysisTool = None
-
 
 # ============================================================
 # ENVIRONMENT
