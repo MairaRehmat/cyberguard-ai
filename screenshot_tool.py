@@ -219,7 +219,7 @@ Return ONLY the visible text.
                     }
                 ],
 
-                max_tokens=1000,
+                max_tokens=500,
 
                 temperature=0,
             )
