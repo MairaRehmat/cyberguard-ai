@@ -1,8 +1,7 @@
 crewai
 streamlit
 plotly
-pydantic>=2.10,<3
+pydantic<2.12
 Pillow
 pytesseract
 python-dotenv
-chromadb>=1.0.0
