@@ -1,0 +1,8 @@
+crewai
+streamlit
+plotly
+pydantic
+Pillow
+pytesseract
+python-dotenv
+
