@@ -1,4 +1,4 @@
-crewai
+crewai==0.86.0
 streamlit
 plotly
 pydantic<2.12
