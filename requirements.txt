@@ -6,3 +6,5 @@ Pillow
 pytesseract
 python-dotenv
 setuptools==75.8.0
+fastapi
+uvicorn
