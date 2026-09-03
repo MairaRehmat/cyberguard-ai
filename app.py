@@ -48,7 +48,7 @@ ask_cyberguard = None
 
 try:
 
-    from phish_guard_ai.crew import (
+    from crew import (
         check_message,
         ask_cyberguard,
     )
