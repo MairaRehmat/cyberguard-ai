@@ -5,4 +5,4 @@ pydantic==2.11.10
 Pillow
 pytesseract
 python-dotenv
-setuptools
+setuptools==75.8.0
