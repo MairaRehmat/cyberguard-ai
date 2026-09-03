@@ -5,6 +5,9 @@ from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # ============================================================
