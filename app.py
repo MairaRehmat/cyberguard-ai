@@ -76,10 +76,9 @@ N8N_WEBHOOK_URL = (
 def send_to_n8n(message, result):
 
     if not N8N_WEBHOOK_URL:
-        return False
+        return False, "N8N_WEBHOOK_URL is empty"
 
     try:
-
         response = requests.post(
             N8N_WEBHOOK_URL,
             json={
@@ -89,18 +88,16 @@ def send_to_n8n(message, result):
             timeout=15,
         )
 
-        response.raise_for_status()
-
-        return True
-
-    except Exception as exc:
-
-        print(
-            f"n8n webhook error: "
-            f"{type(exc).__name__}: {exc}"
+        return (
+            True,
+            f"n8n response: {response.status_code} - {response.text[:200]}"
         )
 
-        return False
+    except Exception as exc:
+        return (
+            False,
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 # ============================================================
