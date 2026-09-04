@@ -1,23 +1,20 @@
-import requests
 import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # ============================================================
 # PATH
 # ============================================================
 
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SRC_DIR = os.path.join(
     BASE_DIR,
@@ -67,6 +64,46 @@ except Exception as exc:
 
 
 # ============================================================
+# N8N WEBHOOK
+# ============================================================
+
+N8N_WEBHOOK_URL = os.getenv(
+    "N8N_WEBHOOK_URL",
+    ""
+).strip()
+
+
+def send_to_n8n(message, result):
+
+    if not N8N_WEBHOOK_URL:
+        return False
+
+    try:
+
+        response = requests.post(
+            N8N_WEBHOOK_URL,
+            json={
+                "message": message,
+                "analysis": result,
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+        return True
+
+    except Exception as exc:
+
+        print(
+            f"n8n webhook error: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+        return False
+
+
+# ============================================================
 # LOG
 # ============================================================
 
@@ -92,37 +129,75 @@ with st.sidebar:
     st.divider()
 
     if CREW_AVAILABLE:
-        st.success("🟢 AI Engine Online")
+
+        st.success(
+            "🟢 AI Engine Online"
+        )
+
     else:
-        st.error("🔴 AI Engine Error")
+
+        st.error(
+            "🔴 AI Engine Error"
+        )
 
         with st.expander("Backend error"):
-            st.code(CREW_ERROR)
+
+            st.code(
+                CREW_ERROR
+            )
 
     st.divider()
 
-    st.subheader("🧭 Features")
+    st.subheader(
+        "🧭 Features"
+    )
 
-    st.write("🔍 Message Analysis")
-    st.write("🖼️ Screenshot Analysis")
-    st.write("💬 Cybersecurity Chat")
-    st.write("🎓 Cybersecurity Learning")
-    st.write("📊 Security Activity")
+    st.write(
+        "🔍 Message Analysis"
+    )
+
+    st.write(
+        "🖼️ Screenshot Analysis"
+    )
+
+    st.write(
+        "💬 Cybersecurity Chat"
+    )
+
+    st.write(
+        "🎓 Cybersecurity Learning"
+    )
+
+    st.write(
+        "📊 Security Activity"
+    )
 
     st.divider()
 
-    st.subheader("📊 Risk Levels")
+    st.subheader(
+        "📊 Risk Levels"
+    )
 
-    st.success("🟢 0–33  Safe")
-    st.warning("🟡 34–69  Suspicious")
-    st.error("🔴 70–100  Dangerous")
+    st.success(
+        "🟢 0–33  Safe"
+    )
+
+    st.warning(
+        "🟡 34–69  Suspicious"
+    )
+
+    st.error(
+        "🔴 70–100  Dangerous"
+    )
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
-st.title("🛡️ CyberGuard AI")
+st.title(
+    "🛡️ CyberGuard AI"
+)
 
 st.subheader(
     "Your friendly AI cybersecurity assistant"
@@ -193,7 +268,9 @@ if page == "🔍 Check a Message":
                 "CyberGuard AI backend is unavailable."
             )
 
-            st.code(CREW_ERROR)
+            st.code(
+                CREW_ERROR
+            )
 
         else:
 
@@ -203,6 +280,10 @@ if page == "🔍 Check a Message":
 
                 try:
 
+                    # ------------------------------------------------
+                    # CREWAI ANALYSIS
+                    # ------------------------------------------------
+
                     result = check_message(
                         message=message
                     )
@@ -211,9 +292,28 @@ if page == "🔍 Check a Message":
                         "last_result"
                     ] = result
 
-                    st.success(
-                        "Investigation completed."
+
+                    # ------------------------------------------------
+                    # SEND RESULT TO N8N
+                    # ------------------------------------------------
+
+                    n8n_sent = send_to_n8n(
+                        message,
+                        result
                     )
+
+                    if n8n_sent:
+
+                        st.success(
+                            "Investigation completed and "
+                            "sent to n8n."
+                        )
+
+                    else:
+
+                        st.success(
+                            "Investigation completed."
+                        )
 
                 except Exception as exc:
 
@@ -276,7 +376,9 @@ elif page == "🖼️ Check a Screenshot":
                 "CyberGuard AI backend is unavailable."
             )
 
-            st.code(CREW_ERROR)
+            st.code(
+                CREW_ERROR
+            )
 
         else:
 
@@ -457,10 +559,6 @@ if (
                 "Further verification is recommended."
             )
 
-        # ----------------------------------------------------
-        # THREAT ASSESSMENT
-        # ----------------------------------------------------
-
         st.subheader(
             "🧩 Threat Assessment"
         )
@@ -479,10 +577,6 @@ if (
                 "No specific high-risk attack pattern identified."
             )
 
-        # ----------------------------------------------------
-        # WHY
-        # ----------------------------------------------------
-
         st.subheader(
             "⚠️ Why?"
         )
@@ -494,10 +588,6 @@ if (
                 st.write(
                     "• " + str(reason)
                 )
-
-        # ----------------------------------------------------
-        # WARNING SIGNS
-        # ----------------------------------------------------
 
         if warning_signs:
 
@@ -666,7 +756,9 @@ elif page == "💬 Ask CyberGuard":
                 "CyberGuard AI backend is unavailable."
             )
 
-            st.code(CREW_ERROR)
+            st.code(
+                CREW_ERROR
+            )
 
         else:
 
@@ -818,6 +910,7 @@ elif page == "📊 Security Activity":
                             ).upper()
 
                         if current not in counts:
+
                             current = "SUSPICIOUS"
 
                         counts[current] += 1
@@ -825,9 +918,11 @@ elif page == "📊 Security Activity":
                         total += 1
 
                     except Exception:
+
                         continue
 
         except Exception:
+
             pass
 
     if total == 0:
@@ -893,5 +988,5 @@ elif page == "📊 Security Activity":
 st.divider()
 
 st.caption(
-    "🛡️ CyberGuard AI • CrewAI • Streamlit"
+    "🛡️ CyberGuard AI • CrewAI • Streamlit • n8n"
 )
