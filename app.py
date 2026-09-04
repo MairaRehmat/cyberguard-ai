@@ -67,10 +67,10 @@ except Exception as exc:
 # N8N WEBHOOK
 # ============================================================
 
-N8N_WEBHOOK_URL = os.getenv(
-    "N8N_WEBHOOK_URL",
-    ""
-).strip()
+# Production n8n webhook URL
+N8N_WEBHOOK_URL = (
+    "https://maira58.app.n8n.cloud/webhook/cyberguard"
+)
 
 
 def send_to_n8n(message, result):
@@ -520,6 +520,7 @@ if (
         [2, 1]
     )
 
+
     # ========================================================
     # VERDICT
     # ========================================================
@@ -600,6 +601,7 @@ if (
                 st.write(
                     "• " + str(sign)
                 )
+
 
     # ========================================================
     # RISK
@@ -688,6 +690,7 @@ if (
             use_container_width=True
         )
 
+
     # ========================================================
     # ACTIONS
     # ========================================================
@@ -709,6 +712,7 @@ if (
         st.info(
             recommendation
         )
+
 
     # ========================================================
     # EDUCATION
@@ -884,6 +888,7 @@ elif page == "📊 Security Activity":
                             )
 
                         if timestamp < cutoff:
+
                             continue
 
                         verdict_data = entry.get(
