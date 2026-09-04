@@ -79,6 +79,7 @@ def send_to_n8n(message, result):
         return False, "N8N_WEBHOOK_URL is empty"
 
     try:
+
         response = requests.post(
             N8N_WEBHOOK_URL,
             json={
@@ -88,12 +89,54 @@ def send_to_n8n(message, result):
             timeout=15,
         )
 
+        response.raise_for_status()
+
+        response_text = response.text.strip()
+
+        if not response_text:
+            response_text = "No response body"
+
         return (
             True,
-            f"n8n response: {response.status_code} - {response.text[:200]}"
+            f"HTTP {response.status_code}: "
+            f"{response_text[:300]}"
+        )
+
+    except requests.exceptions.Timeout:
+
+        return (
+            False,
+            "Request timed out after 15 seconds."
+        )
+
+    except requests.exceptions.ConnectionError as exc:
+
+        return (
+            False,
+            f"ConnectionError: {exc}"
+        )
+
+    except requests.exceptions.HTTPError as exc:
+
+        status_code = getattr(
+            exc.response,
+            "status_code",
+            "unknown"
+        )
+
+        response_text = ""
+
+        if exc.response is not None:
+            response_text = exc.response.text[:300]
+
+        return (
+            False,
+            f"HTTP Error {status_code}: "
+            f"{response_text}"
         )
 
     except Exception as exc:
+
         return (
             False,
             f"{type(exc).__name__}: {exc}"
@@ -294,7 +337,7 @@ if page == "🔍 Check a Message":
                     # SEND RESULT TO N8N
                     # ------------------------------------------------
 
-                    n8n_sent = send_to_n8n(
+                    n8n_sent, n8n_message = send_to_n8n(
                         message,
                         result
                     )
@@ -306,10 +349,19 @@ if page == "🔍 Check a Message":
                             "sent to n8n."
                         )
 
+                        st.info(
+                            f"n8n: {n8n_message}"
+                        )
+
                     else:
 
                         st.success(
                             "Investigation completed."
+                        )
+
+                        st.error(
+                            f"n8n connection failed: "
+                            f"{n8n_message}"
                         )
 
                 except Exception as exc:
