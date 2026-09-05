@@ -114,7 +114,7 @@ else:
 # NORMALIZATION
 # ============================================================
 
-def normalize_text(text: str) -> str:
+def normalize_text(text: str):
 
     if not text:
         return ""
@@ -190,21 +190,18 @@ def calculate_risk(message: str):
 
     dangerous_patterns = [
 
-        # Credentials
         (
             r"\b(password|passcode)\b",
             30,
             "Credential request detected."
         ),
 
-        # OTP
         (
             r"\b(otp|one[- ]time password|verification code|security code)\b",
             30,
             "A request involving an OTP or verification code was detected."
         ),
 
-        # Financial information
         (
             r"\b(card number|credit card|debit card|cvv|bank account|"
             r"account number|bank details)\b",
@@ -212,7 +209,6 @@ def calculate_risk(message: str):
             "Sensitive financial information is being requested."
         ),
 
-        # Prize / reward
         (
             r"\b(congratulations|you(?:'| are)?ve been selected|"
             r"selected for|winner|won|prize|reward|cash prize|"
@@ -221,7 +217,6 @@ def calculate_risk(message: str):
             "An unexpected prize or reward claim was detected."
         ),
 
-        # Urgency
         (
             r"\b(urgent|immediately|right now|act now|"
             r"within \d+ minutes?|within \d+ hours?|"
@@ -230,7 +225,6 @@ def calculate_risk(message: str):
             "Urgent or pressure-based language was detected."
         ),
 
-        # Account threats
         (
             r"\b(account will be suspended|account suspended|"
             r"account will be closed|account blocked|"
@@ -239,7 +233,6 @@ def calculate_risk(message: str):
             "A threatening account-related claim was detected."
         ),
 
-        # Verification
         (
             r"\b(verify your account|verify account|"
             r"confirm your account|verification required|"
@@ -248,7 +241,6 @@ def calculate_risk(message: str):
             "A request to verify an account or identity was detected."
         ),
 
-        # Click actions
         (
             r"\b(click here|click the link|clicking the link|"
             r"clicking this link|click below|click the button|"
@@ -257,7 +249,6 @@ def calculate_risk(message: str):
             "The message asks the user to interact with a link or button."
         ),
 
-        # Claim actions
         (
             r"\b(claim now|claim your prize|redeem now|"
             r"redeem your reward|collect your reward)\b",
@@ -265,7 +256,6 @@ def calculate_risk(message: str):
             "The message asks the user to claim or redeem something."
         ),
 
-        # Malware
         (
             r"\b(download this file|download the attachment|"
             r"install this app|install the software|"
@@ -652,25 +642,15 @@ def calculate_risk(message: str):
     safe_actions = list(dict.fromkeys(safe_actions))
 
     return {
-
         "risk_score": score,
-
         "verdict": verdict,
-
         "threats": threats,
-
         "threat_assessment": threats,
-
         "reasons": reasons,
-
         "warnings": warnings,
-
         "warning_signs": warnings,
-
         "safe_actions": safe_actions,
-
         "recommendation": recommendation,
-
         "education": education,
     }
 
@@ -736,12 +716,6 @@ def check_message(message="", image_path=None):
             image_path
         )
 
-        # IMPORTANT:
-        # Do NOT silently convert screenshot failure into
-        # SUSPICIOUS + 0%.
-        #
-        # We return the real error so it can be diagnosed.
-
         if not extraction.get("success", False):
 
             error_message = extraction.get(
@@ -752,18 +726,14 @@ def check_message(message="", image_path=None):
             result = calculate_risk("")
 
             result["risk_score"] = 0
-
             result["verdict"] = "SUSPICIOUS"
 
             result["reasons"] = [
-
                 "The screenshot could not be analyzed.",
-
                 f"Analysis error: {error_message}",
             ]
 
             result["warnings"] = [
-
                 "Please check the screenshot analysis configuration."
             ]
 
@@ -775,6 +745,9 @@ def check_message(message="", image_path=None):
             )
 
             result["extracted_text"] = ""
+
+            # Log failed screenshot analysis too
+            save_security_activity(result)
 
             return result
 
@@ -792,7 +765,6 @@ def check_message(message="", image_path=None):
             result = calculate_risk("")
 
             result["risk_score"] = 0
-
             result["verdict"] = "SUSPICIOUS"
 
             result["reasons"] = [
@@ -811,6 +783,9 @@ def check_message(message="", image_path=None):
             )
 
             result["extracted_text"] = ""
+
+            # Log empty OCR result too
+            save_security_activity(result)
 
             return result
 
@@ -855,12 +830,13 @@ def save_security_activity(result):
 
     try:
 
+        # IMPORTANT:
+        # Save the log inside the project folder.
+        # This avoids the previous problem of going
+        # three directories up.
+
         base_dir = os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(
-                    os.path.abspath(__file__)
-                )
-            )
+            os.path.abspath(__file__)
         )
 
         logs_dir = os.path.join(
@@ -880,6 +856,10 @@ def save_security_activity(result):
 
         data = []
 
+        # ----------------------------------------------------
+        # READ EXISTING LOG
+        # ----------------------------------------------------
+
         if os.path.exists(log_file):
 
             try:
@@ -893,15 +873,21 @@ def save_security_activity(result):
                     data = json.load(f)
 
                 if not isinstance(data, list):
-
                     data = []
 
-            except Exception:
+            except (json.JSONDecodeError, OSError) as e:
+
+                print(
+                    f"Existing security activity log could not be read: {e}"
+                )
 
                 data = []
 
-        entry = {
+        # ----------------------------------------------------
+        # CREATE NEW ENTRY
+        # ----------------------------------------------------
 
+        entry = {
             "timestamp": datetime.now(
                 timezone.utc
             ).isoformat(),
@@ -910,6 +896,10 @@ def save_security_activity(result):
         }
 
         data.append(entry)
+
+        # ----------------------------------------------------
+        # SAVE LOG
+        # ----------------------------------------------------
 
         with open(
             log_file,
@@ -923,6 +913,10 @@ def save_security_activity(result):
                 indent=2,
                 ensure_ascii=False
             )
+
+        print(
+            f"Security activity saved successfully: {log_file}"
+        )
 
     except Exception as e:
 
