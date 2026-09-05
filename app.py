@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 # ============================================================
 # PATH
 # ============================================================
@@ -67,7 +68,6 @@ except Exception as exc:
 # N8N WEBHOOK
 # ============================================================
 
-# Production n8n webhook URL
 N8N_WEBHOOK_URL = (
     "https://maira58.app.n8n.cloud/webhook/cyberguard"
 )
@@ -76,6 +76,7 @@ N8N_WEBHOOK_URL = (
 def send_to_n8n(message, result):
 
     if not N8N_WEBHOOK_URL:
+
         return False, "N8N_WEBHOOK_URL is empty"
 
     try:
@@ -144,13 +145,20 @@ def send_to_n8n(message, result):
 
 
 # ============================================================
-# LOG
+# SECURITY ACTIVITY LOG
 # ============================================================
 
+# IMPORTANT:
+# crew.py also saves activity here.
+#
+# Do NOT use check_logs.jsonl.
+#
+# Both app.py and crew.py must use the same file.
+
 LOG_FILE = os.path.join(
-    SRC_DIR,
-    "phish_guard_ai",
-    "check_logs.jsonl"
+    BASE_DIR,
+    "logs",
+    "security_activity.json"
 )
 
 
@@ -320,10 +328,6 @@ if page == "🔍 Check a Message":
 
                 try:
 
-                    # ------------------------------------------------
-                    # CREWAI ANALYSIS
-                    # ------------------------------------------------
-
                     result = check_message(
                         message=message
                     )
@@ -331,11 +335,6 @@ if page == "🔍 Check a Message":
                     st.session_state[
                         "last_result"
                     ] = result
-
-
-                    # ------------------------------------------------
-                    # SEND RESULT TO N8N
-                    # ------------------------------------------------
 
                     n8n_sent, n8n_message = send_to_n8n(
                         message,
@@ -886,7 +885,7 @@ elif page == "🎓 Learn Cybersecurity":
 
 
 # ============================================================
-# ACTIVITY
+# SECURITY ACTIVITY
 # ============================================================
 
 elif page == "📊 Security Activity":
@@ -894,6 +893,10 @@ elif page == "📊 Security Activity":
     st.header(
         "📊 Security Activity"
     )
+
+    # --------------------------------------------------------
+    # DEFAULT COUNTS
+    # --------------------------------------------------------
 
     counts = {
         "SAFE": 0,
@@ -903,14 +906,38 @@ elif page == "📊 Security Activity":
 
     total = 0
 
-    if os.path.exists(LOG_FILE):
+    recent_entries = []
 
-        cutoff = (
-            datetime.now(timezone.utc)
-            - timedelta(days=7)
+    # --------------------------------------------------------
+    # LAST 7 DAYS
+    # --------------------------------------------------------
+
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(days=7)
+    )
+
+    # --------------------------------------------------------
+    # CHECK FILE
+    # --------------------------------------------------------
+
+    if not os.path.exists(LOG_FILE):
+
+        st.info(
+            "No investigations recorded during the last 7 days."
         )
 
+        st.caption(
+            f"Activity file: {LOG_FILE}"
+        )
+
+    else:
+
         try:
+
+            # ------------------------------------------------
+            # READ JSON FILE
+            # ------------------------------------------------
 
             with open(
                 LOG_FILE,
@@ -918,40 +945,95 @@ elif page == "📊 Security Activity":
                 encoding="utf-8"
             ) as file:
 
-                for line in file:
+                data = json.load(file)
 
-                    try:
+            if not isinstance(data, list):
 
-                        entry = json.loads(
-                            line
+                data = []
+
+            # ------------------------------------------------
+            # PROCESS RECORDS
+            # ------------------------------------------------
+
+            for entry in data:
+
+                try:
+
+                    timestamp_value = entry.get(
+                        "timestamp"
+                    )
+
+                    if not timestamp_value:
+                        continue
+
+                    timestamp = datetime.fromisoformat(
+                        timestamp_value
+                    )
+
+                    if timestamp.tzinfo is None:
+
+                        timestamp = timestamp.replace(
+                            tzinfo=timezone.utc
                         )
 
-                        timestamp = datetime.fromisoformat(
-                            entry["timestamp"]
-                        )
+                    # Only last 7 days
+                    if timestamp < cutoff:
+                        continue
 
-                        if timestamp.tzinfo is None:
+                    # ------------------------------------------------
+                    # IMPORTANT:
+                    # crew.py saves:
+                    #
+                    # {
+                    #     "timestamp": "...",
+                    #     "result": {
+                    #         "verdict": "DANGEROUS"
+                    #     }
+                    # }
+                    #
+                    # Therefore verdict is inside result.
+                    # ------------------------------------------------
 
-                            timestamp = timestamp.replace(
-                                tzinfo=timezone.utc
+                    result_data = entry.get(
+                        "result",
+                        {}
+                    )
+
+                    # Safety for old log formats
+                    if isinstance(
+                        result_data,
+                        dict
+                    ):
+
+                        current = str(
+                            result_data.get(
+                                "verdict",
+                                ""
                             )
+                        ).upper()
 
-                        if timestamp < cutoff:
+                    else:
 
-                            continue
+                        current = ""
 
-                        verdict_data = entry.get(
+                    # ------------------------------------------------
+                    # SUPPORT OLD FORMAT TOO
+                    # ------------------------------------------------
+
+                    if not current:
+
+                        old_verdict = entry.get(
                             "verdict",
-                            {}
+                            ""
                         )
 
                         if isinstance(
-                            verdict_data,
+                            old_verdict,
                             dict
                         ):
 
                             current = str(
-                                verdict_data.get(
+                                old_verdict.get(
                                     "verdict",
                                     "SUSPICIOUS"
                                 )
@@ -960,24 +1042,85 @@ elif page == "📊 Security Activity":
                         else:
 
                             current = str(
-                                verdict_data
+                                old_verdict
                             ).upper()
 
-                        if current not in counts:
+                    # ------------------------------------------------
+                    # NORMALIZE VERDICT
+                    # ------------------------------------------------
 
-                            current = "SUSPICIOUS"
+                    if current not in counts:
 
-                        counts[current] += 1
+                        current = "SUSPICIOUS"
 
-                        total += 1
+                    counts[current] += 1
 
-                    except Exception:
+                    total += 1
 
-                        continue
+                    # ------------------------------------------------
+                    # STORE RECENT ENTRY
+                    # ------------------------------------------------
 
-        except Exception:
+                    risk_score = 0
 
-            pass
+                    if isinstance(
+                        result_data,
+                        dict
+                    ):
+
+                        try:
+
+                            risk_score = int(
+                                result_data.get(
+                                    "risk_score",
+                                    0
+                                )
+                            )
+
+                        except Exception:
+
+                            risk_score = 0
+
+                    recent_entries.append(
+                        {
+                            "Time": timestamp,
+                            "Verdict": current,
+                            "Risk Score": risk_score,
+                        }
+                    )
+
+                except Exception as entry_error:
+
+                    # Do not silently hide the problem
+                    print(
+                        f"Activity entry error: {entry_error}"
+                    )
+
+                    continue
+
+        except json.JSONDecodeError as exc:
+
+            st.error(
+                "Security activity file contains invalid JSON."
+            )
+
+            st.code(
+                str(exc)
+            )
+
+        except Exception as exc:
+
+            st.error(
+                "Could not read security activity."
+            )
+
+            st.code(
+                f"{type(exc).__name__}: {exc}"
+            )
+
+    # --------------------------------------------------------
+    # DISPLAY
+    # --------------------------------------------------------
 
     if total == 0:
 
@@ -985,7 +1128,16 @@ elif page == "📊 Security Activity":
             "No investigations recorded during the last 7 days."
         )
 
+        # Helpful diagnostic information
+        st.caption(
+            f"Looking for activity file: {LOG_FILE}"
+        )
+
     else:
+
+        # ----------------------------------------------------
+        # METRICS
+        # ----------------------------------------------------
 
         c1, c2, c3, c4 = st.columns(4)
 
@@ -1009,6 +1161,12 @@ elif page == "📊 Security Activity":
             counts["DANGEROUS"]
         )
 
+        st.divider()
+
+        # ----------------------------------------------------
+        # CHART
+        # ----------------------------------------------------
+
         fig = go.Figure(
             go.Bar(
                 x=[
@@ -1021,18 +1179,62 @@ elif page == "📊 Security Activity":
                     counts["SUSPICIOUS"],
                     counts["DANGEROUS"]
                 ],
+                marker_color=[
+                    "#22c55e",
+                    "#f59e0b",
+                    "#ef4444"
+                ],
             )
         )
 
         fig.update_layout(
-            title="Last 7 Days",
+            title="Security Investigations - Last 7 Days",
             height=350,
+            xaxis_title="Verdict",
+            yaxis_title="Number of Investigations",
         )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
+
+        # ----------------------------------------------------
+        # RECENT INVESTIGATIONS
+        # ----------------------------------------------------
+
+        if recent_entries:
+
+            st.divider()
+
+            st.subheader(
+                "🕒 Recent Investigations"
+            )
+
+            recent_entries.sort(
+                key=lambda x: x["Time"],
+                reverse=True
+            )
+
+            display_entries = []
+
+            for item in recent_entries:
+
+                display_entries.append(
+                    {
+                        "Time": item["Time"].astimezone().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "Verdict": item["Verdict"],
+                        "Risk Score": item["Risk Score"],
+                    }
+                )
+
+            st.dataframe(
+                display_entries,
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # ============================================================
