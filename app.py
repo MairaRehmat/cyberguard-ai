@@ -4,7 +4,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
-import requests
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -65,95 +64,10 @@ except Exception as exc:
 
 
 # ============================================================
-# N8N WEBHOOK
-# ============================================================
-
-N8N_WEBHOOK_URL = (
-    "https://maira58.app.n8n.cloud/webhook/cyberguard"
-)
-
-
-def send_to_n8n(message, result):
-
-    if not N8N_WEBHOOK_URL:
-
-        return False, "N8N_WEBHOOK_URL is empty"
-
-    try:
-
-        response = requests.post(
-            N8N_WEBHOOK_URL,
-            json={
-                "message": message,
-                "analysis": result,
-            },
-            timeout=15,
-        )
-
-        response.raise_for_status()
-
-        response_text = response.text.strip()
-
-        if not response_text:
-            response_text = "No response body"
-
-        return (
-            True,
-            f"HTTP {response.status_code}: "
-            f"{response_text[:300]}"
-        )
-
-    except requests.exceptions.Timeout:
-
-        return (
-            False,
-            "Request timed out after 15 seconds."
-        )
-
-    except requests.exceptions.ConnectionError as exc:
-
-        return (
-            False,
-            f"ConnectionError: {exc}"
-        )
-
-    except requests.exceptions.HTTPError as exc:
-
-        status_code = getattr(
-            exc.response,
-            "status_code",
-            "unknown"
-        )
-
-        response_text = ""
-
-        if exc.response is not None:
-            response_text = exc.response.text[:300]
-
-        return (
-            False,
-            f"HTTP Error {status_code}: "
-            f"{response_text}"
-        )
-
-    except Exception as exc:
-
-        return (
-            False,
-            f"{type(exc).__name__}: {exc}"
-        )
-
-
-# ============================================================
 # SECURITY ACTIVITY LOG
 # ============================================================
 
-# IMPORTANT:
-# crew.py also saves activity here.
-#
-# Do NOT use check_logs.jsonl.
-#
-# Both app.py and crew.py must use the same file.
+# crew.py and app.py use the same activity file.
 
 LOG_FILE = os.path.join(
     BASE_DIR,
@@ -277,7 +191,7 @@ page = st.radio(
 
 
 # ============================================================
-# MESSAGE
+# MESSAGE ANALYSIS
 # ============================================================
 
 if page == "🔍 Check a Message":
@@ -336,32 +250,9 @@ if page == "🔍 Check a Message":
                         "last_result"
                     ] = result
 
-                    n8n_sent, n8n_message = send_to_n8n(
-                        message,
-                        result
+                    st.success(
+                        "Investigation completed."
                     )
-
-                    if n8n_sent:
-
-                        st.success(
-                            "Investigation completed and "
-                            "sent to n8n."
-                        )
-
-                        st.info(
-                            f"n8n: {n8n_message}"
-                        )
-
-                    else:
-
-                        st.success(
-                            "Investigation completed."
-                        )
-
-                        st.error(
-                            f"n8n connection failed: "
-                            f"{n8n_message}"
-                        )
 
                 except Exception as exc:
 
@@ -375,7 +266,7 @@ if page == "🔍 Check a Message":
 
 
 # ============================================================
-# SCREENSHOT
+# SCREENSHOT ANALYSIS
 # ============================================================
 
 elif page == "🖼️ Check a Screenshot":
@@ -818,17 +709,29 @@ elif page == "💬 Ask CyberGuard":
                 "🤖 CyberGuard is thinking..."
             ):
 
-                answer = ask_cyberguard(
-                    question
-                )
+                try:
 
-                st.markdown(
-                    "### 🤖 CyberGuard"
-                )
+                    answer = ask_cyberguard(
+                        question
+                    )
 
-                st.write(
-                    answer
-                )
+                    st.markdown(
+                        "### 🤖 CyberGuard"
+                    )
+
+                    st.write(
+                        answer
+                    )
+
+                except Exception as exc:
+
+                    st.error(
+                        "CyberGuard could not answer."
+                    )
+
+                    st.code(
+                        f"{type(exc).__name__}: {exc}"
+                    )
 
 
 # ============================================================
@@ -894,10 +797,6 @@ elif page == "📊 Security Activity":
         "📊 Security Activity"
     )
 
-    # --------------------------------------------------------
-    # DEFAULT COUNTS
-    # --------------------------------------------------------
-
     counts = {
         "SAFE": 0,
         "SUSPICIOUS": 0,
@@ -908,18 +807,10 @@ elif page == "📊 Security Activity":
 
     recent_entries = []
 
-    # --------------------------------------------------------
-    # LAST 7 DAYS
-    # --------------------------------------------------------
-
     cutoff = (
         datetime.now(timezone.utc)
         - timedelta(days=7)
     )
-
-    # --------------------------------------------------------
-    # CHECK FILE
-    # --------------------------------------------------------
 
     if not os.path.exists(LOG_FILE):
 
@@ -935,10 +826,6 @@ elif page == "📊 Security Activity":
 
         try:
 
-            # ------------------------------------------------
-            # READ JSON FILE
-            # ------------------------------------------------
-
             with open(
                 LOG_FILE,
                 "r",
@@ -951,10 +838,6 @@ elif page == "📊 Security Activity":
 
                 data = []
 
-            # ------------------------------------------------
-            # PROCESS RECORDS
-            # ------------------------------------------------
-
             for entry in data:
 
                 try:
@@ -964,6 +847,7 @@ elif page == "📊 Security Activity":
                     )
 
                     if not timestamp_value:
+
                         continue
 
                     timestamp = datetime.fromisoformat(
@@ -976,30 +860,15 @@ elif page == "📊 Security Activity":
                             tzinfo=timezone.utc
                         )
 
-                    # Only last 7 days
                     if timestamp < cutoff:
-                        continue
 
-                    # ------------------------------------------------
-                    # IMPORTANT:
-                    # crew.py saves:
-                    #
-                    # {
-                    #     "timestamp": "...",
-                    #     "result": {
-                    #         "verdict": "DANGEROUS"
-                    #     }
-                    # }
-                    #
-                    # Therefore verdict is inside result.
-                    # ------------------------------------------------
+                        continue
 
                     result_data = entry.get(
                         "result",
                         {}
                     )
 
-                    # Safety for old log formats
                     if isinstance(
                         result_data,
                         dict
@@ -1015,10 +884,6 @@ elif page == "📊 Security Activity":
                     else:
 
                         current = ""
-
-                    # ------------------------------------------------
-                    # SUPPORT OLD FORMAT TOO
-                    # ------------------------------------------------
 
                     if not current:
 
@@ -1045,10 +910,6 @@ elif page == "📊 Security Activity":
                                 old_verdict
                             ).upper()
 
-                    # ------------------------------------------------
-                    # NORMALIZE VERDICT
-                    # ------------------------------------------------
-
                     if current not in counts:
 
                         current = "SUSPICIOUS"
@@ -1056,10 +917,6 @@ elif page == "📊 Security Activity":
                     counts[current] += 1
 
                     total += 1
-
-                    # ------------------------------------------------
-                    # STORE RECENT ENTRY
-                    # ------------------------------------------------
 
                     risk_score = 0
 
@@ -1091,7 +948,6 @@ elif page == "📊 Security Activity":
 
                 except Exception as entry_error:
 
-                    # Do not silently hide the problem
                     print(
                         f"Activity entry error: {entry_error}"
                     )
@@ -1118,26 +974,17 @@ elif page == "📊 Security Activity":
                 f"{type(exc).__name__}: {exc}"
             )
 
-    # --------------------------------------------------------
-    # DISPLAY
-    # --------------------------------------------------------
-
     if total == 0:
 
         st.info(
             "No investigations recorded during the last 7 days."
         )
 
-        # Helpful diagnostic information
         st.caption(
             f"Looking for activity file: {LOG_FILE}"
         )
 
     else:
-
-        # ----------------------------------------------------
-        # METRICS
-        # ----------------------------------------------------
 
         c1, c2, c3, c4 = st.columns(4)
 
@@ -1162,10 +1009,6 @@ elif page == "📊 Security Activity":
         )
 
         st.divider()
-
-        # ----------------------------------------------------
-        # CHART
-        # ----------------------------------------------------
 
         fig = go.Figure(
             go.Bar(
@@ -1198,10 +1041,6 @@ elif page == "📊 Security Activity":
             fig,
             use_container_width=True
         )
-
-        # ----------------------------------------------------
-        # RECENT INVESTIGATIONS
-        # ----------------------------------------------------
 
         if recent_entries:
 
