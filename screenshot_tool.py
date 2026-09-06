@@ -2,10 +2,12 @@ import base64
 import os
 from pathlib import Path
 from typing import Type
+from io import BytesIO
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 from openai import OpenAI
+from PIL import Image
 
 
 # ============================================================
@@ -49,7 +51,6 @@ class ScreenshotAnalysisTool(BaseTool):
             )
 
             if not api_key:
-
                 return {
                     "success": False,
                     "text": "",
@@ -66,7 +67,6 @@ class ScreenshotAnalysisTool(BaseTool):
             path = Path(image_path)
 
             if not path.exists():
-
                 return {
                     "success": False,
                     "text": "",
@@ -74,7 +74,6 @@ class ScreenshotAnalysisTool(BaseTool):
                 }
 
             if not path.is_file():
-
                 return {
                     "success": False,
                     "text": "",
@@ -82,40 +81,19 @@ class ScreenshotAnalysisTool(BaseTool):
                 }
 
             # ==================================================
-            # READ IMAGE
-            # ==================================================
-
-            image_bytes = path.read_bytes()
-
-            if not image_bytes:
-
-                return {
-                    "success": False,
-                    "text": "",
-                    "error": "The uploaded image is empty."
-                }
-
-            encoded_image = base64.b64encode(
-                image_bytes
-            ).decode("utf-8")
-
-            # ==================================================
-            # MIME TYPE
+            # CHECK IMAGE FORMAT
             # ==================================================
 
             extension = path.suffix.lower()
 
-            mime_types = {
-                ".png": "image/png",
+            supported_formats = {
+                ".png": "image/jpeg",
                 ".jpg": "image/jpeg",
                 ".jpeg": "image/jpeg",
-                ".webp": "image/webp",
+                ".webp": "image/jpeg",
             }
 
-            mime_type = mime_types.get(extension)
-
-            if not mime_type:
-
+            if extension not in supported_formats:
                 return {
                     "success": False,
                     "text": "",
@@ -124,6 +102,67 @@ class ScreenshotAnalysisTool(BaseTool):
                         "Use PNG, JPG, JPEG or WEBP."
                     )
                 }
+
+            # ==================================================
+            # READ + OPTIMIZE IMAGE
+            # ==================================================
+
+            image_bytes = path.read_bytes()
+
+            if not image_bytes:
+                return {
+                    "success": False,
+                    "text": "",
+                    "error": "The uploaded image is empty."
+                }
+
+            image = Image.open(BytesIO(image_bytes))
+
+            # Convert to RGB for JPEG
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
+            # --------------------------------------------------
+            # Resize only if image is very large
+            # --------------------------------------------------
+
+            max_dimension = 1800
+
+            if max(image.width, image.height) > max_dimension:
+
+                ratio = max_dimension / max(
+                    image.width,
+                    image.height
+                )
+
+                new_width = int(image.width * ratio)
+                new_height = int(image.height * ratio)
+
+                image = image.resize(
+                    (new_width, new_height),
+                    Image.Resampling.LANCZOS
+                )
+
+            # ==================================================
+            # COMPRESS IMAGE
+            # ==================================================
+
+            optimized_buffer = BytesIO()
+
+            image.save(
+                optimized_buffer,
+                format="JPEG",
+                quality=85,
+                optimize=True
+            )
+
+            optimized_bytes = optimized_buffer.getvalue()
+
+            encoded_image = base64.b64encode(
+                optimized_bytes
+            ).decode("utf-8")
+
+            mime_type = "image/jpeg"
 
             # ==================================================
             # OPENROUTER
@@ -141,7 +180,15 @@ class ScreenshotAnalysisTool(BaseTool):
 
             print("--------------------------------------------")
             print("SCREENSHOT ANALYSIS")
-            print(f"Image: {path}")
+            print(f"Original image: {path}")
+            print(
+                f"Original size: "
+                f"{image_bytes.__len__() / 1024:.1f} KB"
+            )
+            print(
+                f"Optimized size: "
+                f"{optimized_bytes.__len__() / 1024:.1f} KB"
+            )
             print(f"Model: {vision_model}")
             print(f"Base URL: {base_url}")
             print("--------------------------------------------")
@@ -219,7 +266,8 @@ Return ONLY the visible text.
                     }
                 ],
 
-                max_tokens=100,
+                # Keep enough room for screenshot text
+                max_tokens=200,
 
                 temperature=0,
             )
@@ -229,19 +277,15 @@ Return ONLY the visible text.
             # ==================================================
 
             if not response.choices:
-
                 return {
                     "success": False,
                     "text": "",
-                    "error": (
-                        "OpenRouter returned no choices."
-                    )
+                    "error": "OpenRouter returned no choices."
                 }
 
             message = response.choices[0].message
 
             text = message.content or ""
-
             text = str(text).strip()
 
             # ==================================================
@@ -249,7 +293,6 @@ Return ONLY the visible text.
             # ==================================================
 
             if not text:
-
                 return {
                     "success": False,
                     "text": "",
