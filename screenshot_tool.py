@@ -267,7 +267,7 @@ Return ONLY the visible text.
                 ],
 
                 # Keep enough room for screenshot text
-                max_tokens=200,
+                max_tokens=75,
 
                 temperature=0,
             )
