@@ -2,10 +2,23 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 
 import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 load_dotenv()
 
@@ -67,13 +80,432 @@ except Exception as exc:
 # SECURITY ACTIVITY LOG
 # ============================================================
 
-# crew.py and app.py use the same activity file.
-
 LOG_FILE = os.path.join(
     BASE_DIR,
     "logs",
     "security_activity.json"
 )
+
+
+# ============================================================
+# PDF SECURITY REPORT
+# ============================================================
+
+def generate_security_report(result, original_message):
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        fontSize=20,
+        spaceAfter=10,
+    )
+
+    subtitle_style = ParagraphStyle(
+        "ReportSubtitle",
+        parent=styles["Heading2"],
+        alignment=TA_CENTER,
+        fontSize=13,
+        spaceAfter=20,
+    )
+
+    heading_style = ParagraphStyle(
+        "ReportHeading",
+        parent=styles["Heading2"],
+        fontSize=13,
+        spaceBefore=14,
+        spaceAfter=7,
+    )
+
+    body_style = ParagraphStyle(
+        "ReportBody",
+        parent=styles["BodyText"],
+        fontSize=10,
+        leading=14,
+        spaceAfter=5,
+    )
+
+    small_style = ParagraphStyle(
+        "ReportSmall",
+        parent=styles["BodyText"],
+        fontSize=8,
+        leading=11,
+    )
+
+    story = []
+
+    # --------------------------------------------------------
+    # RESULT DATA
+    # --------------------------------------------------------
+
+    verdict = str(
+        result.get(
+            "verdict",
+            "SUSPICIOUS"
+        )
+    ).upper()
+
+    try:
+
+        risk = int(
+            result.get(
+                "risk_score",
+                50
+            )
+        )
+
+    except Exception:
+
+        risk = 50
+
+    risk = max(
+        0,
+        min(
+            100,
+            risk
+        )
+    )
+
+    threat_assessment = result.get(
+        "threat_assessment",
+        []
+    )
+
+    reasons = result.get(
+        "reasons",
+        []
+    )
+
+    warning_signs = result.get(
+        "warning_signs",
+        []
+    )
+
+    safe_actions = result.get(
+        "safe_actions",
+        []
+    )
+
+    recommendation = result.get(
+        "recommendation",
+        ""
+    )
+
+    education = result.get(
+        "education",
+        ""
+    )
+
+    # Make sure list fields are actually lists
+    if not isinstance(threat_assessment, list):
+        threat_assessment = [threat_assessment]
+
+    if not isinstance(reasons, list):
+        reasons = [reasons]
+
+    if not isinstance(warning_signs, list):
+        warning_signs = [warning_signs]
+
+    if not isinstance(safe_actions, list):
+        safe_actions = [safe_actions]
+
+    # --------------------------------------------------------
+    # TITLE
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "CyberGuard AI",
+            title_style
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "Cybersecurity Investigation Report",
+            subtitle_style
+        )
+    )
+
+    # --------------------------------------------------------
+    # INVESTIGATION INFORMATION
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "Investigation Information",
+            heading_style
+        )
+    )
+
+    report_data = [
+        [
+            "Investigation Date",
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        ],
+        [
+            "Verdict",
+            verdict
+        ],
+        [
+            "Risk Score",
+            f"{risk}/100"
+        ],
+    ]
+
+    table = Table(
+        report_data,
+        colWidths=[160, 330]
+    )
+
+    table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (0, -1),
+                colors.lightgrey
+            ),
+            (
+                "VALIGN",
+                (0, 0),
+                (-1, -1),
+                "TOP"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                7
+            ),
+        ])
+    )
+
+    story.append(table)
+
+    # --------------------------------------------------------
+    # ORIGINAL MESSAGE
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "Original Evidence",
+            heading_style
+        )
+    )
+
+    safe_message = (
+        str(original_message)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
+
+    story.append(
+        Paragraph(
+            safe_message,
+            body_style
+        )
+    )
+
+    # --------------------------------------------------------
+    # THREAT ASSESSMENT
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "Threat Assessment",
+            heading_style
+        )
+    )
+
+    if threat_assessment:
+
+        for item in threat_assessment:
+
+            story.append(
+                Paragraph(
+                    "• " + str(item),
+                    body_style
+                )
+            )
+
+    else:
+
+        story.append(
+            Paragraph(
+                "No specific high-risk attack pattern identified.",
+                body_style
+            )
+        )
+
+    # --------------------------------------------------------
+    # WHY
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "Why This Verdict?",
+            heading_style
+        )
+    )
+
+    if reasons:
+
+        for reason in reasons:
+
+            story.append(
+                Paragraph(
+                    "• " + str(reason),
+                    body_style
+                )
+            )
+
+    else:
+
+        story.append(
+            Paragraph(
+                "No additional reasons were provided.",
+                body_style
+            )
+        )
+
+    # --------------------------------------------------------
+    # WARNING SIGNS
+    # --------------------------------------------------------
+
+    if warning_signs:
+
+        story.append(
+            Paragraph(
+                "Warning Signs",
+                heading_style
+            )
+        )
+
+        for sign in warning_signs:
+
+            story.append(
+                Paragraph(
+                    "• " + str(sign),
+                    body_style
+                )
+            )
+
+    # --------------------------------------------------------
+    # SAFE ACTIONS
+    # --------------------------------------------------------
+
+    story.append(
+        Paragraph(
+            "Recommended Safe Actions",
+            heading_style
+        )
+    )
+
+    if safe_actions:
+
+        for action in safe_actions:
+
+            story.append(
+                Paragraph(
+                    "• " + str(action),
+                    body_style
+                )
+            )
+
+    else:
+
+        story.append(
+            Paragraph(
+                "No specific safe actions were provided.",
+                body_style
+            )
+        )
+
+    # --------------------------------------------------------
+    # RECOMMENDATION
+    # --------------------------------------------------------
+
+    if recommendation:
+
+        story.append(
+            Paragraph(
+                "Recommendation",
+                heading_style
+            )
+        )
+
+        story.append(
+            Paragraph(
+                str(recommendation),
+                body_style
+            )
+        )
+
+    # --------------------------------------------------------
+    # SECURITY EDUCATION
+    # --------------------------------------------------------
+
+    if education:
+
+        story.append(
+            Paragraph(
+                "Security Education",
+                heading_style
+            )
+        )
+
+        story.append(
+            Paragraph(
+                str(education),
+                body_style
+            )
+        )
+
+    # --------------------------------------------------------
+    # FOOTER
+    # --------------------------------------------------------
+
+    story.append(
+        Spacer(1, 20)
+    )
+
+    story.append(
+        Paragraph(
+            "Generated by CyberGuard AI • CrewAI • Streamlit",
+            small_style
+        )
+    )
+
+    doc.build(story)
+
+    buffer.seek(0)
+
+    return buffer.getvalue()
 
 
 # ============================================================
@@ -132,6 +564,10 @@ with st.sidebar:
 
     st.write(
         "📊 Security Activity"
+    )
+
+    st.write(
+        "📄 Security Report"
     )
 
     st.divider()
@@ -250,6 +686,10 @@ if page == "🔍 Check a Message":
                         "last_result"
                     ] = result
 
+                    st.session_state[
+                        "last_message"
+                    ] = message
+
                     st.success(
                         "Investigation completed."
                     )
@@ -359,6 +799,10 @@ elif page == "🖼️ Check a Screenshot":
                     st.session_state[
                         "last_result"
                     ] = result
+
+                    st.session_state[
+                        "last_message"
+                    ] = "Screenshot evidence was analyzed."
 
                     st.success(
                         "Screenshot investigation completed."
@@ -666,6 +1110,60 @@ if (
     st.write(
         education
     )
+
+
+    # ========================================================
+    # SECURITY REPORT
+    # ========================================================
+
+    st.divider()
+
+    st.header(
+        "📄 Security Report"
+    )
+
+    st.write(
+        "Generate a downloadable PDF containing "
+        "the complete cybersecurity investigation."
+    )
+
+    original_message = st.session_state.get(
+        "last_message",
+        "Evidence was analyzed by CyberGuard AI."
+    )
+
+    if st.button(
+        "📄 Generate Security Report",
+        type="primary"
+    ):
+
+        try:
+
+            pdf_file = generate_security_report(
+                result,
+                original_message
+            )
+
+            st.download_button(
+                label="⬇️ Download Security Report",
+                data=pdf_file,
+                file_name="CyberGuard_Security_Report.pdf",
+                mime="application/pdf",
+            )
+
+            st.success(
+                "Security report generated successfully."
+            )
+
+        except Exception as exc:
+
+            st.error(
+                "Could not generate security report."
+            )
+
+            st.code(
+                f"{type(exc).__name__}: {exc}"
+            )
 
 
 # ============================================================
